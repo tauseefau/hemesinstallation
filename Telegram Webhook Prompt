@@ -73,8 +73,6 @@ Step 7 — Verify end-to-end:
 a. curl https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo -> url matches,
 pending_update_count is low after a test message.
 
-hermesedemobot:
-[Part 2/2]
 b. If pending_update_count > 0 or last_error_message shows a non-200, the
 nginx route is broken — confirm the location block matches the exact URL
 path and nginx was reloaded.
@@ -85,4 +83,4 @@ state "connected").
 Note: webhook mode disables long-polling (getUpdates) for this bot — intentional.
 A queued message that never arrives is usually the nginx route returning 404,
 not a gateway problem: check getWebhookInfo for last_error_message first.
-```
+
