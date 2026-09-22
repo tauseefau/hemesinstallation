@@ -1,9 +1,8 @@
-hermesedemobot:
-[Part 1/2]
+
 Reusable prompt — paste into any fresh Hermes session to replicate this setup.
 Replace the placeholders per bot.
 
-```
+
 Set up Telegram webhook receiving for Hermes.
 
 FIRST decide which branch applies:
