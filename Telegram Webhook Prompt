@@ -1,0 +1,88 @@
+hermesedemobot:
+[Part 1/2]
+Reusable prompt — paste into any fresh Hermes session to replicate this setup.
+Replace the placeholders per bot.
+
+```
+Set up Telegram webhook receiving for Hermes.
+
+FIRST decide which branch applies:
+A) A webhook link already exists (a domain with TLS + nginx route is serving
+https://<your-domain>) -> go to step 2.
+B) NO webhook link exists yet (no usable domain, TLS cert, or nginx route
+pointing at Hermes) -> do step 1 first, THEN the rest.
+
+Placeholders to substitute first:
+DOMAIN = <your-domain> e.g. www.m3ktab.com
+WEBHOOK_PATH = <path> e.g. api/telegram
+BOT_TOKEN = <bot token> e.g. 8517064643:xxxx
+PUBLIC_IP = <server public IP> e.g. 150.230.13.148
+
+Step 1 — CREATE the webhook link if none exists (branch B only):
+a. DNS: the DOMAIN must resolve to this server's PUBLIC_IP. Check with
+`getent hosts <DOMAIN>`; if it points elsewhere or doesn't resolve, tell me
+to create an A/AAAA record to PUBLIC_IP in the DNS provider, then continue.
+b. Install nginx if missing; ensure it listens on 80 and 443.
+c. Get a TLS cert (Let's Encrypt via certbot) for the DOMAIN, e.g.
+`sudo certbot --nginx -d <DOMAIN> -d www.<DOMAIN>` (DNS must already resolve
+to this box before certbot will issue).
+d. Add an nginx location block to the DOMAIN's 443 `server {}` that proxies the
+<WEBHOOK_PATH> to Hermes's webhook listener (default 8443) and passes the
+auth headers. Back up the config, `nginx -t`, then reload. The location must
+match the EXACT path Telegram will POST to (e.g. location /api/telegram):
+location /api/telegram {
+proxy_pass http://127.0.0.1:8443;
+proxy_set_header Host $host;
+proxy_set_header X-Real-IP $remote_addr;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto https;
+proxy_read_timeout 120s;
+}
+e. Verify the route reaches Hermes: after the gateway's 8443 listener is up, a
+GET to https://<DOMAIN>/<WEBHOOK_PATH> should return 4xx/5xx FROM HERMES
+(405/400/403), NOT a 404 from nginx. A 404 from nginx = the location block is
+wrong or not applied.
+
+Step 2 — Verify the site answers over TLS (branch A and B):
+curl -I https://<DOMAIN>/ -> expect HTTP 200, nginx.
+
+Step 3 — Add the telegram webhook settings to the ACTIVE profile's secret store
+(~/.hermes/.env, or $HERMES_HOME if a profile). Do NOT put these in config.yaml
+— the Telegram adapter reads them from secret scope only:
+TELEGRAM_WEBHOOK_URL=https://<DOMAIN>/<WEBHOOK_PATH>
+TELEGRAM_WEBHOOK_SECRET=<64-char hex, e.g. secrets.token_hex(32)>
+Strip/replace any existing TELEGRAM_WEBHOOK_* lines first. Never print secrets.
+
+Step 4 — Register the webhook with Telegram, passing the secret as secret_token
+so updates are signed (verify Telegram returns {"ok":true}):
+POST https://api.telegram.org/bot<BOT_TOKEN>/setWebhook
+url=https://<DOMAIN>/<WEBHOOK_PATH>
+secret_token=<TELEGRAM_WEBHOOK_SECRET>
+
+Step 5 — Point nginx's <WEBHOOK_PATH> location to Hermes's webhook listener
+(default port 8443, host 0.0.0.0): proxy_pass http://127.0.0.1:8443; then reload
+nginx (already done in step 1 for branch B). Warn me if an existing service
+already owns that path (e.g. an old receiver script on port 8080) so it doesn't
+fight Hermes for updates.
+
+Step 6 — Tell me to run `hermes gateway setup`, enable the Telegram platform, and
+enter the bot token. The gateway reads TELEGRAM_WEBHOOK_URL + TELEGRAM_WEBHOOK_SECRET
+from .env, starts the 8443 listener, and pulls updates.
+
+Step 7 — Verify end-to-end:
+a. curl https://api.telegram.org/bot<BOT_TOKEN>/getWebhookInfo -> url matches,
+pending_update_count is low after a test message.
+
+hermesedemobot:
+[Part 2/2]
+b. If pending_update_count > 0 or last_error_message shows a non-200, the
+nginx route is broken — confirm the location block matches the exact URL
+path and nginx was reloaded.
+c. Send a real message to the bot and confirm the gateway receives it (check
+gateway.log for the incoming update; gateway_state.json should show telegram
+state "connected").
+
+Note: webhook mode disables long-polling (getUpdates) for this bot — intentional.
+A queued message that never arrives is usually the nginx route returning 404,
+not a gateway problem: check getWebhookInfo for last_error_message first.
+```
