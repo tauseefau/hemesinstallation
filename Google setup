@@ -1,0 +1,433 @@
+Google Auth Setup Guide — Hermes google-workspace
+Generated 2026-09-26 · verified end-to-end on this install · portable to any Hermes agent
+
+What this does
+Makes the google-workspace skill (Gmail, Calendar, Drive, Sheets, Docs, Contacts) work on a machine where it is installed but not yet authenticated. It installs the pinned Google deps into a dedicated venv, walks the Google Cloud OAuth client, exchanges the code, and ends with an auto-refreshing token at ~/.hermes/google_token.json.
+
+Two axes are independent and both must be right: APIs enabled on the Cloud project, and OAuth client credentials stored on the machine. An unenabled API fails later with 403: Access Not Configured.
+
+Step 0 — Preflight (always run first)
+The bundled setup.py pins google-auth==2.55.1, which needs Python ≥ 3.10. On a box whose only interpreter is 3.8/3.9 every pinned install fails, and running it with a bare python3 silently targets the wrong interpreter. The preflight script is idempotent and handles all of it:
+
+sh "${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-oauth-setup/scripts/install-google-auth.sh"
+picks the newest interpreter (3.13 → 3.10), or uses $HERMES_HOME/bin/uv to fetch one
+creates $HERMES_HOME/google-workspace-venv
+installs the pins via setup.py --install-deps run under that venv, so pins come from the script and cannot drift
+writes $HERMES_HOME/bin/gsetup and gapi wrappers that always exec the venv
+prints gsetup --check
+Rule: use gsetup/gapi for every later call. Never system python3.
+
+Step 1 — Triage
+Which services? Email-only does not need this skill at all — use himalaya with a Gmail App Password (2 minutes, no Cloud project). This setup always requests the full scope set; it has no --services flag.
+Advanced Protection? (hardware security keys). If yes, a Workspace admin must allowlist the OAuth client ID before consent works.
+Step 2 — Google Cloud OAuth client (~5 min, user does this)
+Create/select a project: console.cloud.google.com/projectselector2/home/dashboard
+Enable APIs on that project: console.cloud.google.com/apis/library — Gmail API, Google Calendar API, Google Drive API, Google Sheets API, Google Docs API, People API
+Create credentials: console.cloud.google.com/apis/credentials → Create Credentials → OAuth 2.0 Client ID
+Application type decides the redirect story:
+Desktop app (recommended) — loopback redirects allowed automatically, nothing to register
+Web application — the redirect URI must be registered byte-for-byte under the client’s Authorized redirect URIs, then passed as GOOGLE_OAUTH_REDIRECT_URI
+If the app is still Testing, add the account as a test user: console.cloud.google.com/auth/audience — otherwise consent dies with Error 403: access_denied
+Download the client JSON, or copy the client ID + secret off the screen
+Step 3 — Store the client secret
+gsetup --client-secret /path/to/client_secret.json
+If only raw values are available, build the JSON first. The script accepts installed (Desktop app) or web (Web app) as the outer key:
+
+{
+  "installed": {
+    "client_id": "....apps.googleusercontent.com",
+    "project_id": "...",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_secret": "GOCSPX-...",
+    "redirect_uris": ["http://localhost:1"]
+  }
+}
+Then chmod 600 ~/.hermes/google_client_secret.json and delete the loose copy. Never leave a world-readable token behind.
+
+Step 4 — Authorization URL
+gsetup --auth-url
+Defaults to redirect http://localhost:1; override with GOOGLE_OAUTH_REDIRECT_URI. It must be identical for the --auth-url and --auth-code runs, and registered on the client if it is a Web-app client.
+
+Tell the user:
+
+the browser lands on a page saying the site “might be having issues, or it may have moved permanently” — expected; that page is the code carrier
+copy the entire address-bar URL, code= included; the address bar keeps it even on the error page
+403: access_denied → not a test user (Step 2.5)
+redirect_uri_mismatch → URI not registered, or the env var differs between the two calls
+Step 5 — Exchange the code
+gsetup --auth-code 'http://localhost:1/?state=...&iss=...&code=4/0A...&scope=...'
+Quote the argument — a pasted redirect URL contains & and %, which the shell mangles unquoted. Codes are single-use and short-lived: on expiry, mismatch, or a stale tab, regenerate with --auth-url and use only the newest redirect. Never retry the same code.
+
+Step 6 — Verify (never skip)
+gsetup --check        # AUTHENTICATED: Token valid at .../google_token.json
+gsetup --check-live   # LIVE_CHECK_OK: Real API call succeeded.
+gapi gmail labels     # real data proves scopes, not just token presence
+Then confirm identity — a token can be valid for the wrong account. Call Gmail users().getProfile(userId="me") and check emailAddress, and state it out loud. Finish with chmod 600 ~/.hermes/google_token.json.
+
+Troubleshooting
+
+
+Symptom	Cause / fix
+python: command not found	No bare python on the box — use the wrappers
+ModuleNotFoundError: No module named 'google'	Ran with system python3.8 — use the venv interpreter
+google-auth==2.55.1 unsatisfiable, Python>=3.10	Interpreter too old — run Step 0
+redirect_uri_mismatch	Web-app client without that redirect registered, or the env var differs between the two calls
+Error 403: access_denied	User not added as a test user on the OAuth consent screen
+HttpError 403: Access Not Configured	That API is not enabled on the project
+Argument cut at the first &	Redirect URL not quoted
+ERROR: No pending OAuth session found	Ran --auth-code without a fresh --auth-url
+AUTHENTICATED (partial)	Scopes were deselected on the consent screen — --revoke, redo Steps 4–6
+Pitfalls
+Never accept a password, app password, or verification code in chat, and never type one into a page. Secrets arrive through the user’s own hands or a vault.
+The localhost error page is not a failure — the code is in the URL.
+Do not retry an errored code exchange; regenerate the URL instead.
+Google emails a “You allowed <app> access to your Google Account data” security alert after consent. The app name is the Cloud project’s consent-screen name, not “Hermes” — recognise it so it is not mistaken for a breach.
+After a successful setup, state the account email. Multi-account machines silently authenticate the wrong one.
+Using it from another agent
+Copy the whole skill directory to the other Hermes install, then run the preflight script there:
+
+scp -r ~/.hermes/skills/productivity/google-oauth-setup user@other-host:~/.hermes/skills/productivity/
+# there:
+sh ~/.hermes/skills/productivity/google-oauth-setup/scripts/install-google-auth.sh
+Nothing in the skill is machine-specific beyond $HERMES_HOME. The OAuth client itself is reusable across machines, but a client still in Testing needs each Google account added as a test user.
+
+Appendix A — SKILL.md (full content)
+File: ~/.hermes/skills/productivity/google-oauth-setup/SKILL.md
+
+---
+name: google-oauth-setup
+description: "Set up Google OAuth for Hermes (google-workspace)."
+version: 1.0.0
+author: Nous Research
+license: MIT
+platforms: [linux, macos]
+metadata:
+  hermes:
+    tags: [Google, Gmail, OAuth, setup, google-workspace, bootstrap]
+    related_skills: [google-workspace, himalaya]
+---
+
+# Google OAuth Setup (bootstrap for the `google-workspace` skill)
+
+Makes the `google-workspace` skill (`gmail`, `calendar`, `drive`, `sheets`, `docs`,
+`contacts`) usable on a machine where it is installed but not yet authenticated.
+Portable: copy this whole skill directory to another Hermes install and it works.
+
+Scope: getting a working `~/.hermes/google_token.json`. The `google-workspace`
+SKILL.md owns command usage; this skill owns the one-time bootstrap.
+
+## Step 0 — Preflight (run this first, always)
+
+The bundled `setup.py` pins `google-auth==2.55.1`, which requires Python >= 3.10.
+A machine whose only interpreter is 3.8/3.9 fails every pinned install. Never run
+`setup.py` with a bare `python3` — resolve the interpreter first.
+
+```bash
+sh "${HERMES_HOME:-$HOME/.hermes}/skills/productivity/google-oauth-setup/scripts/install-google-auth.sh"
+```
+
+The script is idempotent and does all of this:
+
+- picks the newest available interpreter (3.13 → 3.10), or asks `$HERMES_HOME/bin/uv`
+  to fetch one when none is new enough
+- creates `$HERMES_HOME/google-workspace-venv`
+- installs the pinned deps via `setup.py --install-deps` run **under that venv**, so the
+  pins come from the script itself and cannot drift
+- writes `$HERMES_HOME/bin/gsetup` and `$HERMES_HOME/bin/gapi` wrappers that always
+  exec the venv interpreter
+- prints `gsetup --check`
+
+Prefer the wrappers (`gsetup`, `gapi`) for every later call. If they are missing,
+substitute `"$HERMES_HOME/google-workspace-venv/bin/python" <script.py>` — never
+system `python3`.
+
+## Step 1 — Triage (ask, do not assume)
+
+1. Which Google services? Email-only does not need this skill — use `himalaya` with a
+   Gmail App Password instead (2 minutes, no Cloud project). The setup script here
+   always requests the full scope set (gmail read/send/modify, calendar, drive,
+   contacts, spreadsheets, documents); it has no `--services` flag.
+2. Advanced Protection (hardware security keys)? If yes, the Workspace admin must
+   allowlist the OAuth client ID before consent will work.
+
+## Step 2 — Google Cloud OAuth client (user does this; ~5 minutes)
+
+Send these links to the user verbatim:
+
+1. Create/select a project: https://console.cloud.google.com/projectselector2/home/dashboard
+2. Enable APIs on THAT project: https://console.cloud.google.com/apis/library
+   — Gmail API, Google Calendar API, Google Drive API, Google Sheets API,
+   Google Docs API, People API. A project is a separate axis from the client: an
+   unenabled API fails later with `403: Access Not Configured`.
+3. Create credentials: https://console.cloud.google.com/apis/credentials
+   → Create Credentials → OAuth 2.0 Client ID
+4. Application type — this decides the redirect story:
+   - **Desktop app** (recommended): loopback redirects are allowed automatically.
+   - **Web application**: the redirect URI must be registered byte-for-byte, so ask
+     the user to add it under the client's *Authorized redirect URIs* and then pass
+     that exact value as `GOOGLE_OAUTH_REDIRECT_URI`.
+5. If the app is still *Testing*, add the account as a test user:
+   https://console.cloud.google.com/auth/audience — otherwise consent dies with
+   `Error 403: access_denied`.
+6. Download the client JSON, or read the ID/secret off the screen.
+
+## Step 3 — Store the client secret
+
+Either path is fine; accept whichever the user gives.
+
+```bash
+gsetup --client-secret /path/to/client_secret.json
+```
+
+If the user pastes raw values instead of a file, build the JSON yourself first. The
+script accepts either `installed` (Desktop app) or `web` (Web app) as the outer key:
+
+```json
+{
+  "installed": {
+    "client_id": "....apps.googleusercontent.com",
+    "project_id": "...",
+    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+    "token_uri": "https://oauth2.googleapis.com/token",
+    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+    "client_secret": "GOCSPX-...",
+    "redirect_uris": ["http://localhost:1"]
+  }
+}
+```
+
+Then `chmod 600 $HERMES_HOME/google_client_secret.json` and delete the loose copy.
+
+## Step 4 — Authorization URL
+
+```bash
+gsetup --auth-url
+```
+
+Defaults to redirect `http://localhost:1`; override with `GOOGLE_OAUTH_REDIRECT_URI`.
+The value must be identical for the `--auth-url` and `--auth-code` runs, and must be
+registered on the client if it is a Web-app client.
+
+Send the user the URL as a single unwrapped line, plus these facts:
+
+- the browser lands on a "this webpage might be having issues, or it may have moved
+  permanently" page at `localhost:1` — **expected**, that page is just the code carrier
+- copy the ENTIRE address-bar URL, code included; the address bar keeps it even on the
+  error page
+- `403: access_denied` → they are not a test user (Step 2.5)
+- `redirect_uri_mismatch` → the URI is not registered, or `GOOGLE_OAUTH_REDIRECT_URI`
+  differs between the two calls
+
+## Step 5 — Exchange the code
+
+The code is single-use and short-lived. Quote the argument: a pasted redirect URL
+contains `&` and `%`, which the shell mangles unquoted.
+
+```bash
+gsetup --auth-code 'http://localhost:1/?state=...&iss=...&code=4/0A...&scope=...'
+```
+
+Expect `OK: Authenticated. Token saved to .../google_token.json`. On expiry, mismatch,
+or a stale tab, regenerate with `--auth-url` and use only the newest redirect.
+
+## Step 6 — Verify (do not skip, do not trust the exchange's exit code alone)
+
+```bash
+gsetup --check        # AUTHENTICATED: Token valid at .../google_token.json
+gsetup --check-live   # LIVE_CHECK_OK: Real API call succeeded.
+gapi gmail labels     # real data proves scopes, not just token presence
+```
+
+Confirm the identity too: build the Gmail `users().getProfile(userId="me")` call and
+check `emailAddress` — a token can be valid for the wrong account.
+Then `chmod 600 $HERMES_HOME/google_token.json`.
+
+## Wire-up notes
+
+- Token auto-refreshes; nothing to redo. Revoke with `gsetup --revoke`.
+- `gws` CLI, if installed, reuses the same `~/.hermes/google_token.json`.
+- himalaya: its Gmail backend takes a short-lived bearer token, not the refreshable
+  Hermes token. Wire `gmail.auth.token.command` to a helper that prints a fresh access
+  token; do not paste the token into the config. Email-only users are usually better off
+  with a Gmail App Password there instead.
+- Google emails a "You allowed <app> access to your Google Account data" alert after
+  consent. The app name is the consent-screen name from the Cloud project, not
+  "Hermes" — tell the user that when it arrives.
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `python: command not found` | No bare `python` on the box — use the wrappers |
+| `ModuleNotFoundError: No module named 'google'` | Ran with system python3.8 — use the venv interpreter |
+| `google-auth==2.55.1` unsatisfiable, `Python>=3.10` | Interpreter too old — run Step 0 |
+| `redirect_uri_mismatch` | Web-app client without that redirect registered, or env var differs between the two calls |
+| `Error 403: access_denied` | User not added as a test user |
+| `HttpError 403: Access Not Configured` | That API not enabled on the project |
+| Argument cut at the first `&` | Redirect URL not quoted |
+| `ERROR: No pending OAuth session found` | Ran `--auth-code` without a fresh `--auth-url` |
+| `AUTHENTICATED (partial)` | Scopes were deselected on the consent screen — `--revoke`, redo Steps 4–6 |
+
+## Pitfalls
+
+- Never accept a password/app password/verification code in chat, and never type one
+  into a page. Secrets reach the system through the user's own hands or a vault.
+- Do not treat the localhost error page as a failure; the code is in the URL.
+- Do not retry a code exchange that errored — regenerate the URL instead; codes are
+  single-use and a retry can burn a valid one.
+- Do not leave the loose client-secret copy or a world-readable token behind.
+- State the account email after verification: multi-account machines silently
+  authenticate the wrong one.
+Appendix B — Agent system prompt
+File: references/system-prompt.md — paste the text block into another agent so it can drive this setup itself.
+
+# System prompt: drive the Google OAuth bootstrap for the google-workspace skill
+
+Paste the block below into a Hermes agent's system prompt (or give it to the agent as
+its standing task) when that agent must be able to set up Google auth on its own,
+including on a machine where you are the one answering the questions.
+
+---
+
+```text
+You can set up Google Workspace access (Gmail, Calendar, Drive, Sheets, Docs,
+Contacts) for this Hermes install. Own the whole flow, and never invent success.
+
+Load the `google-oauth-setup` skill first; it holds the exact commands. If it is
+absent, use the same procedure against `google-workspace/scripts/setup.py`.
+
+Hard rules:
+1. NEVER run setup.py with a bare `python3`/`python`. The skill pins google-auth
+   >= 3.10-era deps. Run the preflight script, then use the `gsetup` / `gapi`
+   wrappers, which exec `$HERMES_HOME/google-workspace-venv/bin/python`.
+2. NEVER accept a password, app password, client secret, or verification code as
+   chat input, and never type one into a page. Accept the OAuth client JSON path, or
+   raw client_id + client_secret, and treat any of those as sensitive: write to a
+   0600 file, and delete loose copies after `.hermes/google_client_secret.json`
+   exists.
+3. NEVER retry a failed code exchange with the same code. Regenerate the auth URL.
+   Codes are single-use, short-lived, and a stale tab or a retry burns them.
+4. NEVER report the setup as done until ALL of these pass on real output:
+   `gsetup --check` prints AUTHENTICATED, `gsetup --check-live` prints
+   LIVE_CHECK_OK, and one real read call returns data (e.g. `gapi gmail labels`).
+   Then confirm the account identity (Gmail getProfile -> emailAddress) and say it.
+
+Sequence: preflight -> triage (services? Advanced Protection?) -> send the Cloud
+Console links and ask for the client JSON path or raw values -> `gsetup
+--client-secret` -> `gsetup --auth-url` -> user approves in a browser -> user pastes
+the redirected URL -> `gsetup --auth-code '<pasted url>'` (quoted!) -> verify.
+
+When you hand the user the auth URL, always add these three facts: the localhost
+page that says the site "may have moved" is EXPECTED and is the code carrier; copy
+the ENTIRE address-bar URL including code=; a 403 access_denied means they are not
+listed as a test user yet on the OAuth consent screen.
+
+The redirect URI defaults to http://localhost:1. For a Web-application OAuth client
+it must be registered byte-for-byte on the client, and the same value must be set via
+GOOGLE_OAUTH_REDIRECT_URI for BOTH `--auth-url` and `--auth-code` (Desktop-app
+clients need nothing).
+
+After consent Google sends a "You allowed <app> access to your Google Account data"
+alert. The name is the project's consent-screen name, not Hermes — tell the user, so
+they do not report it as a breach.
+
+Never mutate Google data (send mail, create/delete events, share/delete Drive files,
+edit Docs/Sheets) without showing exactly what will happen and getting approval.
+After an approved write, read the object back and quote its ID and URL.
+
+If a step cannot be completed, say which step blocks and why. Do not substitute a
+plausible-looking result for a real one.
+```
+Appendix C — Preflight script
+File: scripts/install-google-auth.sh
+
+#!/bin/sh
+# install-google-auth.sh — make the Hermes google-workspace skill runnable.
+#
+# Creates $HERMES_HOME/google-workspace-venv with the pinned Google API deps and
+# writes $HERMES_HOME/bin/{gsetup,gapi} wrappers that always exec that venv.
+# Idempotent: safe to re-run at any time.
+#
+# Why a venv: the skill pins google-auth==2.55.1 (Python >= 3.10). Machines whose
+# only interpreter is 3.8/3.9 cannot install the pins at all, and calling setup.py
+# with a bare `python3` silently targets the wrong interpreter.
+set -eu
+
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+SKILL_DIR="$HERMES_HOME/skills/productivity/google-workspace"
+SETUP="$SKILL_DIR/scripts/setup.py"
+API="$SKILL_DIR/scripts/google_api.py"
+VENV="$HERMES_HOME/google-workspace-venv"
+BIN="$HERMES_HOME/bin"
+UV="$HERMES_HOME/bin/uv"
+
+if [ ! -f "$SETUP" ]; then
+  echo "ERROR: $SETUP not found. Install the google-workspace skill first." >&2
+  exit 1
+fi
+
+# --- 1. pick a Python >= 3.10 ------------------------------------------------
+PY=""
+for cand in python3.13 python3.12 python3.11 python3.10; do
+  if command -v "$cand" >/dev/null 2>&1; then PY="$(command -v "$cand")"; break; fi
+done
+
+if [ -z "$PY" ] && [ -x "$UV" ]; then
+  echo "No interpreter >= 3.10 on PATH; asking uv to provide one."
+  "$UV" python install 3.12 >/dev/null 2>&1 || true
+  for cand in python3.12 python3.13 python3.11 python3.10; do
+    if command -v "$cand" >/dev/null 2>&1; then PY="$(command -v "$cand")"; break; fi
+  done
+fi
+
+if [ -z "$PY" ]; then
+  echo "ERROR: need Python >= 3.10 (3.10-3.13). Install one, or install uv at" >&2
+  echo "       $UV so this script can fetch an interpreter." >&2
+  exit 1
+fi
+echo "Using interpreter: $PY ($("$PY" -V 2>&1))"
+
+# --- 2. venv -----------------------------------------------------------------
+if [ -x "$VENV/bin/python" ]; then
+  echo "Venv already present: $VENV"
+elif [ -x "$UV" ]; then
+  "$UV" venv --python "$PY" "$VENV"
+else
+  "$PY" -m venv "$VENV"
+fi
+
+# --- 3. deps (pins come from setup.py, so they cannot drift) -----------------
+echo "Installing pinned Google deps..."
+if ! "$VENV/bin/python" "$SETUP" --install-deps; then
+  echo "ERROR: dependency install failed. Retry manually:" >&2
+  echo "  $UV pip install --python $VENV/bin/python google-api-python-client==2.194.0 google-auth==2.55.1 google-auth-oauthlib==1.3.1 google-auth-httplib2==0.3.1 httplib2==0.32.0 pyasn1==0.6.4" >&2
+  exit 1
+fi
+
+echo "Checking imports..."
+"$VENV/bin/python" -c 'import google.oauth2.credentials, google_auth_oauthlib.flow, googleapiclient.discovery' \
+  && echo "  imports OK"
+
+# --- 4. wrappers -------------------------------------------------------------
+mkdir -p "$BIN"
+cat > "$BIN/gsetup" <<EOF
+#!/bin/sh
+exec "$VENV/bin/python" "$SETUP" "\$@"
+EOF
+cat > "$BIN/gapi" <<EOF
+#!/bin/sh
+exec "$VENV/bin/python" "$API" "\$@"
+EOF
+chmod 755 "$BIN/gsetup" "$BIN/gapi"
+echo "Wrappers: $BIN/gsetup, $BIN/gapi"
+
+case ":$PATH:" in
+  *":$BIN:"*) : ;;
+  *) echo "NOTE: $BIN is not on PATH — call the wrappers by absolute path." ;;
+esac
+
+# --- 5. report ---------------------------------------------------------------
+echo "--- auth status ---"
+"$BIN/gsetup" --check || echo "(expected until OAuth is completed — see SKILL.md Step 2 onward)"
