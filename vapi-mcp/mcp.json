@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "vapi-mcp": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "/tmp/hermes-install/vapi-mcp/server.py"
+      ],
+      "env": {
+        "VAPI_API_KEY": "${VAPI_API_KEY}",
+        "VAPI_BASE_URL": "${VAPI_BASE_URL:-https://api.vapi.ai}"
+      },
+      "cwd": "/tmp/hermes-install/vapi-mcp"
+    }
+  }
+}
