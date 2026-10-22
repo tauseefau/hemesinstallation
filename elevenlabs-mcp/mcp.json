@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "elevenlabs-mcp": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "./server.py"
+      ],
+      "env": {
+        "ELEVENLABS_API_KEY": "${ELEVENLABS_API_KEY}",
+        "ELEVENLABS_BASE_URL": "${ELEVENLABS_BASE_URL:-https://api.elevenlabs.io/v1}"
+      }
+    }
+  }
+}

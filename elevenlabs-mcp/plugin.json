@@ -1,0 +1,23 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "elevenlabs-mcp",
+  "version": "1.0.0",
+  "description": "ElevenLabs MCP server: drive the ElevenLabs voice-agent platform from any MCP client - discover voices, manage the TTS voice library, and generate text-to-speech audio. Install as a Hermes plugin to wire ElevenLabs into your Hermes workflow via MCP tools (elevenlabs_generate_speech, elevenlabs_list_voices, elevenlabs_create_voice, etc.).",
+  "author": {
+    "name": "tauseefau",
+    "url": "https://github.com/tauseefau"
+  },
+  "homepage": "https://github.com/tauseefau/hemesinstallation/tree/main/elevenlabs-mcp",
+  "repository": "https://github.com/tauseefau/hemesinstallation/tree/main/elevenlabs-mcp",
+  "license": "MIT",
+  "keywords": [
+    "elevenlabs",
+    "voice-agent",
+    "mcp",
+    "mcp-server",
+    "hermes-plugin",
+    "tts",
+    "text-to-speech",
+    "voice"
+  ]
+}
