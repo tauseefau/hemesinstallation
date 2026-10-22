@@ -1,0 +1,34 @@
+services:
+  9router:
+    image: decolua/9router:latest
+    container_name: 9router
+    restart: unless-stopped
+    env_file:
+      - .env
+    expose:
+      - "20128"
+    volumes:
+      - "$HOME/.9router:/app/data"
+    environment:
+      DATA_DIR: /app/data
+      HEADROOM_URL: http://headroom:8787
+    depends_on:
+      - headroom
+    networks:
+      - nginx_proxy
+
+  headroom:
+    image: ghcr.io/chopratejas/headroom:latest
+    container_name: headroom
+    restart: unless-stopped
+    expose:
+      - "8787"
+    networks:
+      - nginx_proxy
+
+volumes:
+  9router-data:
+
+networks:
+  nginx_proxy:
+    external: true

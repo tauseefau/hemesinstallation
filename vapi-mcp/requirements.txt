@@ -1,0 +1,4 @@
+mcp-server==1.0.1
+httpx>=0.28.0
+starlette>=0.30.0
+uvicorn>=0.23.0

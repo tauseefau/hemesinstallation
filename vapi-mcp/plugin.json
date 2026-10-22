@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "vapi-mcp",
+  "version": "1.0.0",
+  "description": "Vapi MCP server: drive the Vapi voice-agent platform from any MCP client \u2014 create voice agents, manage phone numbers, and make/receive phone calls. Install as a Hermes plugin to wire Vapi into your Hermes workflow via MCP tools (vapi_create_assistant, vapi_list_assistants, vapi_create_call, vapi_end_call, etc.).",
+  "author": {
+    "name": "tauseefau",
+    "url": "https://github.com/tauseefau"
+  },
+  "homepage": "https://github.com/tauseefau/hemesinstallation/tree/main/vapi-mcp",
+  "repository": "https://github.com/tauseefau/hemesinstallation/tree/main/vapi-mcp",
+  "license": "MIT",
+  "keywords": [
+    "vapi",
+    "voice-agent",
+    "mcp",
+    "mcp-server",
+    "hermes-plugin",
+    "twilio",
+    "vonage",
+    "telnyx",
+    "voice",
+    "phone-calls"
+  ]
+}
