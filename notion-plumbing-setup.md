@@ -102,6 +102,7 @@ curl -s -X POST "https://api.notion.com/v1/databases" \
       "properties": {
         "Booking": {"title": {}},
         "Customer": {"relation": {"data_source_id": "<CUSTOMERS_DATA_SOURCE_ID>", "database_id": "<CUSTOMERS_DB_ID>", "single_property": {}, "type": "single_property"}},
+        "Address": {"rich_text": {}},
         "Date": {"date": {}},
         "Time": {"select": {"options": [
             {"name": "09:00", "color": "default"}, {"name": "10:00"}, {"name": "11:00"},
@@ -293,6 +294,7 @@ curl -s -X POST "https://api.notion.com/v1/pages" \
       "Workers": {"multi_select": [{"name": "John Rivera"}]},
       "Status": {"select": {"name": "Confirmed"}},
       "Job": {"rich_text": [{"text": {"content": "Diagnose & repair A/C unit"}}]},
+      "Address": {"rich_text": [{"text": {"content": "1 Acme Way, Springfield"}}]},
       "Pricing plan": {"relation": [{"id": "<STANDARD_RATE_ID>"}]},
       "Start time": {"date": {"start": "2026-10-23T10:00:00"}},
       "End time": {"date": {"start": "2026-10-23T12:00:00"}},
@@ -417,7 +419,8 @@ token, webhook token) in a sibling `private/` dir outside the docroot, `chmod 06
 
 - Auth: Vapi sends `X-Booking-Token`; the endpoint rejects a mismatch with 401.
 - It reuses a customer matched by phone, else creates one, then creates the MW
-  Bookings row and returns a spoken confirmation.
+  Bookings row — copying the service **Address** onto the row itself — and returns
+  a spoken confirmation.
 - `checkAvailability` queries MW Bookings by date and returns the free hourly slots.
 - Test it without a phone: POST a fake `tool-calls` payload and confirm the Notion
   write lands (see the repo's demo package).
