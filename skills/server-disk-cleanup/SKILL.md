@@ -24,6 +24,14 @@ Map the disk before acting. Big consumers on a typical self-hosted box are Docke
 
 Prefer `du -xh` (no cross-filesystem, human units) over `du -sh *`; drill two or three levels deep rather than stopping at the first summary.
 
+A bundled `scripts/diskusage.py` renders the overview + top directories as colour-coded bars in one pass (stdlib only, no deps):
+
+    python3 scripts/diskusage.py /                 # df overview + top dirs under /
+    python3 scripts/diskusage.py /var --depth 2 --top 15
+    python3 scripts/diskusage.py --no-color        # plain output for logs/cron
+
+Bars follow severity (green <70%, yellow 70-89%, red >=90%). Colour auto-disables on a non-tty, so the same command is safe in cron or a captured log.
+
 ## Docker cleanup (usually the biggest win)
 Show real usage and container-to-image references, not the estimate:
 
